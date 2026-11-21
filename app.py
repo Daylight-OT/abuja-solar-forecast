@@ -119,14 +119,25 @@ solar_curve = np.maximum(0, np.sin((hours - 6) / 12 * np.pi)) ** 1.5
 hourly_forecast = np.round(solar_curve * pred_pv * 1.8, 2)
 avg_power = hourly_forecast.mean()
 
+# --- STATUS FOR TODAY ---
+last = df.iloc[-1]
+irr = last['irradiance']
+if irr >= 5:
+    status = "Excellent ☀️"
+elif irr >= 3:
+    status = "Good 🌤️"
+elif irr >= 1.5:
+    status = "Fair ⛅"
+else:
+    status = "Low 🌧️"
+
 # --- METRICS ---
 st.subheader(f"📊 Live Forecast for Abuja - {datetime.now().strftime('%d %b %Y')}")
 col1, col2, col3, col4 = st.columns(4)
-last = df.iloc[-1]
 col1.metric("☀️ Irradiance Today", f"{last['irradiance']:.2f} kWh/m²/day")
 col2.metric("🌡️ Temperature", f"{last['temperature']:.1f} °C")
 col3.metric("💧 Humidity", f"{last['humidity']:.1f} %")
-col4.metric("⚡ Predicted PV Power", f"{pred_pv:.2f} kW")
+col4.metric("⚡ Predicted PV Power", f"{status} - {pred_pv:.2f} kW")
 
 # --- GRAPH 1 ---
 st.subheader("📈 24-Hour Solar Forecast - Abuja")
