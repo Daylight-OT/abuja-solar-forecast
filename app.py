@@ -130,11 +130,19 @@ elif irr >= 1.5:
     status = "Fair ⛅"
 else:
     status = "Low 🌧️"
+if irr >= 5:
+    sun_status = "Sunny Day ☀️"
+elif irr >= 3:
+    sun_status = "Partly Cloudy 🌤️"
+elif irr >= 1.5:
+    sun_status = "Cloudy ⛅"
+else:
+    sun_status = "Rainy / Low Sun 🌧️"
 
 # --- METRICS ---
 st.subheader(f"📊 Live Forecast for Abuja - {datetime.now().strftime('%d %b %Y')}")
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("☀️ Irradiance Today", f"{last['irradiance']:.2f} kWh/m²/day")
+col1.metric("☀️ Irradiance Today (kWh/m²/day)", f"{last['irradiance']:.2f}", delta=sun_status)
 col2.metric("🌡️ Temperature", f"{last['temperature']:.1f} °C")
 col3.metric("💧 Humidity", f"{last['humidity']:.1f} %")
 col4.metric("⚡ Predicted PV Power", f"{pred_pv:.2f} kW", delta=status)
