@@ -137,7 +137,7 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("☀️ Irradiance Today", f"{last['irradiance']:.2f} kWh/m²/day")
 col2.metric("🌡️ Temperature", f"{last['temperature']:.1f} °C")
 col3.metric("💧 Humidity", f"{last['humidity']:.1f} %")
-col4.metric("⚡ Predicted PV Power", f"{status} - {pred_pv:.2f} kW")
+col4.metric("⚡ Predicted PV Power", f"{pred_pv:.2f} kW", delta=status)
 
 # --- GRAPH 1 ---
 st.subheader("📈 24-Hour Solar Forecast - Abuja")
