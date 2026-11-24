@@ -259,7 +259,6 @@ if live is not None and live.get("hourly_radiation"):
                 rad = live["hourly_radiation"][i] or 0
                 temp_h = live["hourly_temp"][i] if i < len(live.get("hourly_temp", [])) else 25
                 temp_factor = 1 - 0.004 * (temp_h - 25)
-                # FIXED: removed x 1.8 - now (rad/1000) x pred_pv is correct
                 pv_h = (rad / 1000.0) * pred_pv * max(0.5, temp_factor)
                 real_hourly.append(round(max(0, pv_h), 2))
             else:
@@ -271,20 +270,17 @@ if live is not None and live.get("hourly_radiation"):
 
 avg_power = hourly_forecast.mean()
 
-# --- PV NOW - FIXED: USE LIVE RADIATION 89 W/m2 EXAMPLE ---
-# Example with your reload: (89/1000) x 5.16 x 0.973 = 0.45 kW, NOT 2.40 kW
+# --- PV NOW - FIXED: USE LIVE RADIATION ---
+# Example: (89/1000) x 5.16 x 0.973 = 0.45 kW, NOT 2.40 kW
 pv_now = float(hourly_forecast[lagos_hour()]) if len(hourly_forecast) == 24 else float(pred_pv)
 if live is not None and live.get("radiation_live") is not None:
     live_rad = live["radiation_live"] or 0
     live_temp_for_pv = live.get("temp_live") or 25
     temp_factor_live = 1 - 0.004 * (live_temp_for_pv - 25)
-    # FIXED: removed x 1.8, use live radiation directly
     pv_from_live = (live_rad / 1000.0) * pred_pv * max(0.5, temp_factor_live)
     pv_now = round(max(0, pv_from_live), 2)
-    if live_rad < 100:
-        pv_now = round(max(0, pv_from_live), 2)
 
-# --- METRICS WITH EVENING-SMART CAPTIONS ---
+# --- METRICS ---
 st.subheader(f"📊 Live Forecast for Abuja - {lagos_now().strftime('%d %b %Y')}")
 col1, col2, col3, col4 = st.columns(4)
 last = df.iloc[-1]
@@ -376,7 +372,7 @@ hourly_df = pd.DataFrame({
 })
 st.dataframe(hourly_df, use_container_width=True)
 
-# --- RECOMMENDATION - THRESHOLDS ADJUSTED FOR NO-1.8 VALUES ---
+# --- RECOMMENDATION ---
 st.subheader("💡 Recommendation")
 if is_evening_forecast:
     st.info("🌙 It is evening now in Abuja. Today's sun is finished. Save your battery for tonight, use grid / generator if needed. Tomorrow's sun will charge again.")
@@ -402,19 +398,25 @@ else:
     else:
         st.error("🔴 Cloudy day in Abuja. Don't rely on solar alone, keep PHCN / generator ready.")
 
-# --- BATTERY ADVICE - FIXED: NO MORE ... ---
+# --- BATTERY ADVICE - FINAL FIX: TIME TO FULL IN EVENING ---
 st.subheader("🔋 Battery Advice - What To Do Now")
 now_hour = lagos_hour()
 remaining_energy = float(hourly_forecast[now_hour:].sum())
 battery_now_kwh = battery_size * (battery_now_pct / 100.0)
 battery_needed_kwh = battery_size - battery_now_kwh
 solar_after_load = max(0, remaining_energy - daily_load)
-hours_to_full = (battery_needed_kwh / max(0.1, pv_now)) if pv_now > 0 else 99
+
+# FINAL FIX: In evening, don't show 5.6 hrs - sun is gone, so Not today
+if is_evening_forecast:
+    hours_to_full = 99
+else:
+    hours_to_full = (battery_needed_kwh / max(0.1, pv_now)) if pv_now > 0 else 99
 
 b1, b2, b3 = st.columns(3)
 b1.metric("🔋 Battery Now", f"{battery_now_kwh:.1f} / {battery_size:.1f} kWh")
 b1.caption(f"{battery_now_pct}% full")
 b2.metric("☀️ Solar Left", f"{remaining_energy:.1f} kWh")
+b2.caption("Total sun left today, before your load")
 b3.metric("⏱️ Time to Full", f"{hours_to_full:.1f} hrs" if hours_to_full < 20 else "Not today")
 
 if is_evening_forecast:
@@ -431,7 +433,7 @@ if solar_after_load >= battery_needed_kwh:
 else:
     st.info(f"💡 Heads up: Today's remaining sun ({solar_after_load:.1f} kWh) is NOT enough to fill your battery ({battery_needed_kwh:.1f} kWh needed). Prioritize essentials.")
 
-# --- BATTERY HEALTH - FIXED: NO MORE ... ---
+# --- BATTERY HEALTH ---
 st.subheader("🩺 Battery Health - How Strong Is Your Battery?")
 health_loss = (battery_age_months * 0.25) + (battery_cycles * 0.02)
 health_pct = max(50.0, 100.0 - health_loss)
