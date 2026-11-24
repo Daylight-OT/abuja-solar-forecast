@@ -206,7 +206,7 @@ if live is not None:
 
     live_temp = live['temp_live'] if live['temp_live'] is not None else 0
     with c2:
-        st.metric("🌡️ Live Temperature", f"{live_temp:.1f} °C")
+        st.metric("🌡️ Live Temp (Right Now)", f"{live_temp:.1f} °C")
         if live_temp >= 35:
             st.caption("🥵 Very Hot")
         elif live_temp >= 28:
@@ -246,10 +246,10 @@ if live is not None:
 else:
     st.info("ℹ️ Live Open-Meteo data unavailable right now. Showing NASA forecast only.")
 
-# --- 24H CURVE - LINKED TO OPEN-METEO HOURLY (REAL, NOT FAKE SINE) ---
+# --- 24H CURVE - FIXED: NO MORE x 1.8 ---
 hours = np.arange(24)
 solar_curve = np.maximum(0, np.sin((hours - 6) / 12 * np.pi)) ** 1.5
-hourly_forecast = np.round(solar_curve * pred_pv * 1.8, 2)
+hourly_forecast = np.round(solar_curve * pred_pv, 2)
 
 if live is not None and live.get("hourly_radiation"):
     try:
@@ -259,7 +259,8 @@ if live is not None and live.get("hourly_radiation"):
                 rad = live["hourly_radiation"][i] or 0
                 temp_h = live["hourly_temp"][i] if i < len(live.get("hourly_temp", [])) else 25
                 temp_factor = 1 - 0.004 * (temp_h - 25)
-                pv_h = (rad / 1000.0) * pred_pv * 1.8 * max(0.5, temp_factor)
+                # FIXED: removed x 1.8 - now (rad/1000) x pred_pv is correct
+                pv_h = (rad / 1000.0) * pred_pv * max(0.5, temp_factor)
                 real_hourly.append(round(max(0, pv_h), 2))
             else:
                 real_hourly.append(0.0)
@@ -269,8 +270,19 @@ if live is not None and live.get("hourly_radiation"):
         pass
 
 avg_power = hourly_forecast.mean()
-# PV power for THIS hour - so morning / afternoon / evening are different
+
+# --- PV NOW - FIXED: USE LIVE RADIATION 89 W/m2 EXAMPLE ---
+# Example with your reload: (89/1000) x 5.16 x 0.973 = 0.45 kW, NOT 2.40 kW
 pv_now = float(hourly_forecast[lagos_hour()]) if len(hourly_forecast) == 24 else float(pred_pv)
+if live is not None and live.get("radiation_live") is not None:
+    live_rad = live["radiation_live"] or 0
+    live_temp_for_pv = live.get("temp_live") or 25
+    temp_factor_live = 1 - 0.004 * (live_temp_for_pv - 25)
+    # FIXED: removed x 1.8, use live radiation directly
+    pv_from_live = (live_rad / 1000.0) * pred_pv * max(0.5, temp_factor_live)
+    pv_now = round(max(0, pv_from_live), 2)
+    if live_rad < 100:
+        pv_now = round(max(0, pv_from_live), 2)
 
 # --- METRICS WITH EVENING-SMART CAPTIONS ---
 st.subheader(f"📊 Live Forecast for Abuja - {lagos_now().strftime('%d %b %Y')}")
@@ -282,24 +294,24 @@ now_hour_forecast = lagos_hour()
 is_evening_forecast = now_hour_forecast >= 17 or now_hour_forecast < 6
 
 with col1:
-    st.metric("☀️ Sunlight Today (Whole Day)", f"{irradiance_today:.2f} kWh")
+    st.metric("☀️ Sunlight Today", f"{irradiance_today:.2f} kWh")
     if is_evening_forecast:
         if irradiance_today >= 5.5:
-            st.caption("☀️ Today Was Sunny Day - But sun has set, no more charging today")
+            st.caption("☀️ Today Was Sunny - Sun has set")
         elif irradiance_today >= 3.5:
-            st.caption("⛅ Today Was Fair Day - But sun has set")
+            st.caption("⛅ Today Was Fair - Sun has set")
         else:
-            st.caption("🌧️ Today Was Cloudy Day - Sun has set")
+            st.caption("🌧️ Today Was Cloudy - Sun has set")
     else:
         if irradiance_today >= 5.5:
-            st.caption("☀️ Sunny Day - Plenty sun for charging")
+            st.caption("☀️ Sunny Day - Plenty sun")
         elif irradiance_today >= 3.5:
-            st.caption("⛅ Fair Day - Some sun, some cloud")
+            st.caption("⛅ Fair Day - Some sun")
         else:
-            st.caption("🌧️ Cloudy Day - Less sun today")
+            st.caption("🌧️ Cloudy Day - Less sun")
 
 with col2:
-    st.metric("🌡️ Temperature", f"{last['temperature']:.1f} °C")
+    st.metric("🌡️ Temp (Today Avg)", f"{last['temperature']:.1f} °C")
     if last['temperature'] >= 35:
         st.caption("🥵 Very Hot")
     elif last['temperature'] >= 28:
@@ -310,26 +322,26 @@ with col2:
         st.caption("❄️ Cold")
 
 with col3:
-    st.metric("💧 Humidity", f"{last['humidity']:.1f} %")
+    st.metric("💧 Humidity (Today Avg)", f"{last['humidity']:.1f} %")
     if last['humidity'] >= 70:
-        st.caption("💧 Very Damp - Air is heavy")
+        st.caption("💧 Very Damp")
     elif last['humidity'] >= 40:
         st.caption("😊 Normal")
     else:
         st.caption("🏜️ Dry Air")
 
 with col4:
-    st.metric("⚡ PV Power Now (This Hour)", f"{pv_output:.2f} kW")
+    st.metric("⚡ PV Power Now", f"{pv_output:.2f} kW")
     if is_evening_forecast:
         st.caption("🌙 Sun has set - No power now")
-    elif pv_output >= 5.0:
-        st.caption("⭐ Excellence - Working very well")
-    elif pv_output >= 3.0:
+    elif pv_output >= 2.5:
+        st.caption("⭐ Excellence - Very well")
+    elif pv_output >= 1.5:
         st.caption("👍 Good - Working okay")
     elif pv_output > 0:
-        st.caption("⚠️ Low - Not producing much")
+        st.caption("⚠️ Low - Not much")
     else:
-        st.caption("🌑 No power - Night time")
+        st.caption("🌑 No power - Night")
 
 # --- GRAPH 1 ---
 st.subheader("📈 24-Hour Solar Forecast - Abuja (From Open-Meteo Hourly)")
@@ -356,7 +368,7 @@ plt.xticks(rotation=45)
 st.pyplot(fig2)
 
 # --- TABLE ---
-st.subheader("📋 Hourly Breakdown (Open-Meteo Linked)")
+st.subheader("📋 Hourly Breakdown")
 hourly_df = pd.DataFrame({
     'Hour': [f"{h}:00" for h in hours],
     'Predicted PV Power (kW)': hourly_forecast,
@@ -364,33 +376,33 @@ hourly_df = pd.DataFrame({
 })
 st.dataframe(hourly_df, use_container_width=True)
 
-# --- RECOMMENDATION ---
+# --- RECOMMENDATION - THRESHOLDS ADJUSTED FOR NO-1.8 VALUES ---
 st.subheader("💡 Recommendation")
 if is_evening_forecast:
     st.info("🌙 It is evening now in Abuja. Today's sun is finished. Save your battery for tonight, use grid / generator if needed. Tomorrow's sun will charge again.")
 elif user_type == "Grid Operator":
-    if avg_power > 2.5:
+    if avg_power > 1.4:
         st.success("✅ High solar in Abuja. You can reduce reliance on grid / diesel today.")
-    elif avg_power > 1.2:
+    elif avg_power > 0.7:
         st.warning("⚠️ Moderate solar in Abuja. Keep backup ready, use solar + grid mix.")
     else:
         st.error("🔴 Low solar in Abuja. Expect cloudy / rainy. Switch to grid / battery backup.")
 elif user_type == "Mini-Grid Operator":
-    if avg_power > 2.5:
+    if avg_power > 1.4:
         st.success("✅ High solar in Abuja. Charge batteries fully, you can serve more households today.")
-    elif avg_power > 1.2:
+    elif avg_power > 0.7:
         st.warning("⚠️ Moderate solar in Abuja. Manage load, prioritize essential loads in evening.")
     else:
         st.error("🔴 Low solar in Abuja. Conserve battery, use diesel backup if available.")
 else:
-    if avg_power > 2.5:
+    if avg_power > 1.4:
         st.success("✅ Great day in Abuja! Run washing machine, pump water, charge devices with solar.")
-    elif avg_power > 1.2:
+    elif avg_power > 0.7:
         st.warning("⚠️ Okay day in Abuja. Use solar in afternoon, save battery for night.")
     else:
         st.error("🔴 Cloudy day in Abuja. Don't rely on solar alone, keep PHCN / generator ready.")
 
-# --- BATTERY ADVICE ---
+# --- BATTERY ADVICE - FIXED: NO MORE ... ---
 st.subheader("🔋 Battery Advice - What To Do Now")
 now_hour = lagos_hour()
 remaining_energy = float(hourly_forecast[now_hour:].sum())
@@ -400,15 +412,16 @@ solar_after_load = max(0, remaining_energy - daily_load)
 hours_to_full = (battery_needed_kwh / max(0.1, pv_now)) if pv_now > 0 else 99
 
 b1, b2, b3 = st.columns(3)
-b1.metric("🔋 Battery Now", f"{battery_now_kwh:.1f} / {battery_size:.1f} kWh ({battery_now_pct}%)")
-b2.metric("☀️ Solar Left Today", f"{remaining_energy:.1f} kWh")
-b3.metric("⏱️ Time to Full (at current power)", f"{hours_to_full:.1f} hrs" if hours_to_full < 20 else "Not today")
+b1.metric("🔋 Battery Now", f"{battery_now_kwh:.1f} / {battery_size:.1f} kWh")
+b1.caption(f"{battery_now_pct}% full")
+b2.metric("☀️ Solar Left", f"{remaining_energy:.1f} kWh")
+b3.metric("⏱️ Time to Full", f"{hours_to_full:.1f} hrs" if hours_to_full < 20 else "Not today")
 
 if is_evening_forecast:
     st.error(f"🔴 SAVE BATTERY FOR TONIGHT - Sun has set. No more charging today. You have {battery_now_kwh:.1f} kWh in battery. Use only lights / fan / phone. Use grid / generator if you must.")
-elif pv_now > 3.5:
+elif pv_now > 2.0:
     st.success(f"✅ CHARGE NOW - Best window 11am to 3pm. You have ~{solar_after_load:.1f} kWh left after your load. Battery can be full in ~{hours_to_full:.1f} hrs. Run freezer / washing machine / pump now.")
-elif pv_now > 1.5:
+elif pv_now > 0.8:
     st.warning(f"⚠️ CHARGE SLOWLY - Moderate sun. You have ~{solar_after_load:.1f} kWh left. Charge battery slowly, run only essential loads. Save battery for evening.")
 else:
     st.error(f"🔴 SAVE BATTERY - Low sun. Only ~{solar_after_load:.1f} kWh left. Don't charge heavy loads. Keep battery for lights / fan / phone at night. Use grid / generator if you must.")
@@ -418,7 +431,7 @@ if solar_after_load >= battery_needed_kwh:
 else:
     st.info(f"💡 Heads up: Today's remaining sun ({solar_after_load:.1f} kWh) is NOT enough to fill your battery ({battery_needed_kwh:.1f} kWh needed). Prioritize essentials.")
 
-# --- BATTERY HEALTH ---
+# --- BATTERY HEALTH - FIXED: NO MORE ... ---
 st.subheader("🩺 Battery Health - How Strong Is Your Battery?")
 health_loss = (battery_age_months * 0.25) + (battery_cycles * 0.02)
 health_pct = max(50.0, 100.0 - health_loss)
@@ -426,9 +439,10 @@ real_capacity = battery_size * (health_pct / 100.0)
 lost_capacity = battery_size - real_capacity
 
 h1, h2, h3 = st.columns(3)
-h1.metric("🩺 Battery Health", f"{health_pct:.0f}%")
-h2.metric("🔋 Real Capacity Now", f"{real_capacity:.2f} kWh (was {battery_size:.1f} kWh)")
-h3.metric("📉 Capacity Lost", f"{lost_capacity:.2f} kWh")
+h1.metric("🩺 Health", f"{health_pct:.0f}%")
+h2.metric("🔋 Real Capacity", f"{real_capacity:.2f} kWh")
+h2.caption(f"Was {battery_size:.1f} kWh when new")
+h3.metric("📉 Lost", f"{lost_capacity:.2f} kWh")
 
 st.progress(int(health_pct))
 
