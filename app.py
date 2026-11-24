@@ -1,4 +1,3 @@
-%%writefile app.py
 # ==========================================================
 # APP.PY - ABUJA ONLY
 # Live Dashboard for Abuja
