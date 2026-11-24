@@ -11,6 +11,14 @@ import requests
 import joblib
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+# --- LAGOS TIME - FIX FOR STREAMLIT SERVER IN UTC ---
+LAGOS_TZ = ZoneInfo("Africa/Lagos")
+def lagos_now():
+    return datetime.now(LAGOS_TZ)
+def lagos_hour():
+    return datetime.now(LAGOS_TZ).hour
 
 # --- REPRODUCIBILITY ---
 RANDOM_STATE = 42
@@ -27,7 +35,7 @@ LAT, LON = 9.08, 7.49  # Abuja
 # --- FETCH LIVE DATA ---
 @st.cache_data(ttl=3600)
 def fetch_live_nasa_data(days_back=35):
-    end_date = datetime.now()
+    end_date = lagos_now()
     start_date = end_date - timedelta(days=days_back)
     url = "https://power.larc.nasa.gov/api/temporal/daily/point"
     params = {
@@ -64,7 +72,7 @@ def fetch_live_nasa_data(days_back=35):
         st.error(f"Failed to fetch live data: {e}")
         return None
 
-# --- NEW - LIVE WEATHER API (Open-Meteo, free, no key) ---
+# --- LIVE WEATHER API (Open-Meteo, free, no key) - NOW WITH HOURLY ---
 @st.cache_data(ttl=600)
 def fetch_live_weather_openmeteo():
     url = "https://api.open-meteo.com/v1/forecast"
@@ -74,7 +82,7 @@ def fetch_live_weather_openmeteo():
         "current": "temperature_2m,relative_humidity_2m,cloud_cover,shortwave_radiation,wind_speed_10m",
         "hourly": "shortwave_radiation,temperature_2m,cloud_cover",
         "timezone": "Africa/Lagos",
-        "forecast_days": 1
+        "forecast_days": 2
     }
     try:
         r = requests.get(url, params=params, timeout=15)
@@ -82,6 +90,7 @@ def fetch_live_weather_openmeteo():
             return None
         j = r.json()
         cur = j.get("current", {})
+        hourly = j.get("hourly", {})
         return {
             "time": cur.get("time", ""),
             "temp_live": cur.get("temperature_2m"),
@@ -89,6 +98,10 @@ def fetch_live_weather_openmeteo():
             "cloud_live": cur.get("cloud_cover"),
             "radiation_live": cur.get("shortwave_radiation"),
             "wind_live": cur.get("wind_speed_10m"),
+            "hourly_time": hourly.get("time", []),
+            "hourly_radiation": hourly.get("shortwave_radiation", []),
+            "hourly_temp": hourly.get("temperature_2m", []),
+            "hourly_cloud": hourly.get("cloud_cover", []),
         }
     except Exception:
         return None
@@ -110,14 +123,14 @@ forecast_days = st.sidebar.slider("Forecast Days", 1, 7, 3)
 user_type = st.sidebar.selectbox("👤 I am a...", ["Grid Operator", "Mini-Grid Operator", "Homeowner"])
 get_forecast = st.sidebar.button("🚀 Get Live Forecast")
 
-# --- NEW - BATTERY INPUTS IN SIDEBAR ---
+# --- BATTERY INPUTS IN SIDEBAR ---
 st.sidebar.markdown("---")
 st.sidebar.header("🔋 Battery Advice")
 battery_size = st.sidebar.number_input("How much power can your battery hold? (kWh)", min_value=1.0, max_value=50.0, value=5.0, step=0.5, help="When full, how much power is inside it? Example: Small house = 5, Big house = 10. Check the label on your battery.")
 battery_now_pct = st.sidebar.number_input("How full is your battery now? (%)", min_value=0, max_value=100, value=50, step=5, help="If your battery is half full = 50, If full = 100, If empty = 0")
 daily_load = st.sidebar.number_input("How much light will you use today? (kWh)", min_value=1.0, max_value=50.0, value=5.0, step=0.5, help="Example: Fridge + lights + fan for one day = about 5")
 
-# --- NEW - BATTERY HEALTH - LAYMAN VERSION (no word "cycles" shown) ---
+# --- BATTERY HEALTH - LAYMAN VERSION ---
 st.sidebar.markdown("---")
 st.sidebar.header("🩺 Battery Health")
 battery_age_months = st.sidebar.number_input("How long have you been using this battery? (months ago)", min_value=0, max_value=120, value=12, step=1, help="Example: Using it for 1 year = 12, Using it for 2 years = 24")
@@ -168,10 +181,9 @@ else:
     pred_pv = max(0, pred_pv)
     st.warning("⚠️ best_model.pkl not found. Using physics formula as demo.")
 
-# --- NEW - FETCH LIVE OPEN-METEO WITH EVENING-SMART CAPTIONS ---
+# --- FETCH LIVE OPEN-METEO WITH EVENING-SMART CAPTIONS ---
 live = fetch_live_weather_openmeteo()
-# Evening check: sun sets around 6pm in Abuja, so after 5pm no more charging
-now_hour_live = datetime.now().hour
+now_hour_live = lagos_hour()
 is_evening = now_hour_live >= 17 or now_hour_live < 6
 
 if live is not None:
@@ -234,19 +246,39 @@ if live is not None:
 else:
     st.info("ℹ️ Live Open-Meteo data unavailable right now. Showing NASA forecast only.")
 
-# --- 24H CURVE ---
+# --- 24H CURVE - LINKED TO OPEN-METEO HOURLY (REAL, NOT FAKE SINE) ---
 hours = np.arange(24)
 solar_curve = np.maximum(0, np.sin((hours - 6) / 12 * np.pi)) ** 1.5
 hourly_forecast = np.round(solar_curve * pred_pv * 1.8, 2)
-avg_power = hourly_forecast.mean()
 
-# --- METRICS WITH EVENING-SMART CAPTIONS - SUNNY DAY + EXCELLENCE ---
-st.subheader(f"📊 Live Forecast for Abuja - {datetime.now().strftime('%d %b %Y')}")
+if live is not None and live.get("hourly_radiation"):
+    try:
+        real_hourly = []
+        for i in range(24):
+            if i < len(live["hourly_radiation"]):
+                rad = live["hourly_radiation"][i] or 0
+                temp_h = live["hourly_temp"][i] if i < len(live.get("hourly_temp", [])) else 25
+                temp_factor = 1 - 0.004 * (temp_h - 25)
+                pv_h = (rad / 1000.0) * pred_pv * 1.8 * max(0.5, temp_factor)
+                real_hourly.append(round(max(0, pv_h), 2))
+            else:
+                real_hourly.append(0.0)
+        if sum(real_hourly) > 0:
+            hourly_forecast = np.array(real_hourly)
+    except Exception:
+        pass
+
+avg_power = hourly_forecast.mean()
+# PV power for THIS hour - so morning / afternoon / evening are different
+pv_now = float(hourly_forecast[lagos_hour()]) if len(hourly_forecast) == 24 else float(pred_pv)
+
+# --- METRICS WITH EVENING-SMART CAPTIONS ---
+st.subheader(f"📊 Live Forecast for Abuja - {lagos_now().strftime('%d %b %Y')}")
 col1, col2, col3, col4 = st.columns(4)
 last = df.iloc[-1]
 irradiance_today = last['irradiance']
-pv_output = pred_pv
-now_hour_forecast = datetime.now().hour
+pv_output = pv_now
+now_hour_forecast = lagos_hour()
 is_evening_forecast = now_hour_forecast >= 17 or now_hour_forecast < 6
 
 with col1:
@@ -287,22 +319,24 @@ with col3:
         st.caption("🏜️ Dry Air")
 
 with col4:
-    st.metric("⚡ Predicted PV Power (Daytime)", f"{pv_output:.2f} kW")
+    st.metric("⚡ PV Power Now (This Hour)", f"{pv_output:.2f} kW")
     if is_evening_forecast:
-        st.caption("🌙 Sun has set - No power now, this was for daytime")
+        st.caption("🌙 Sun has set - No power now")
     elif pv_output >= 5.0:
         st.caption("⭐ Excellence - Working very well")
     elif pv_output >= 3.0:
         st.caption("👍 Good - Working okay")
-    else:
+    elif pv_output > 0:
         st.caption("⚠️ Low - Not producing much")
+    else:
+        st.caption("🌑 No power - Night time")
 
 # --- GRAPH 1 ---
-st.subheader("📈 24-Hour Solar Forecast - Abuja")
+st.subheader("📈 24-Hour Solar Forecast - Abuja (From Open-Meteo Hourly)")
 fig, ax = plt.subplots(figsize=(12, 4))
-ax.plot(hours, hourly_forecast, marker='o', color='#FFA500', linewidth=2, label='Predicted PV Power')
+ax.plot(hours, hourly_forecast, marker='o', color='#FFA500', linewidth=2, label='Predicted PV Power (Open-Meteo)')
 ax.fill_between(hours, hourly_forecast, alpha=0.3, color='#FFA500')
-ax.set_xlabel("Hour of Day")
+ax.set_xlabel("Hour of Day (Lagos Time)")
 ax.set_ylabel("PV Power (kW)")
 ax.set_title("Hourly Solar Power Forecast - Abuja")
 ax.set_xticks(range(0, 24))
@@ -322,7 +356,7 @@ plt.xticks(rotation=45)
 st.pyplot(fig2)
 
 # --- TABLE ---
-st.subheader("📋 Hourly Breakdown")
+st.subheader("📋 Hourly Breakdown (Open-Meteo Linked)")
 hourly_df = pd.DataFrame({
     'Hour': [f"{h}:00" for h in hours],
     'Predicted PV Power (kW)': hourly_forecast,
@@ -356,14 +390,14 @@ else:
     else:
         st.error("🔴 Cloudy day in Abuja. Don't rely on solar alone, keep PHCN / generator ready.")
 
-# --- NEW - BATTERY ADVICE ---
+# --- BATTERY ADVICE ---
 st.subheader("🔋 Battery Advice - What To Do Now")
-now_hour = datetime.now().hour
+now_hour = lagos_hour()
 remaining_energy = float(hourly_forecast[now_hour:].sum())
 battery_now_kwh = battery_size * (battery_now_pct / 100.0)
 battery_needed_kwh = battery_size - battery_now_kwh
 solar_after_load = max(0, remaining_energy - daily_load)
-hours_to_full = (battery_needed_kwh / max(0.1, pred_pv)) if pred_pv > 0 else 99
+hours_to_full = (battery_needed_kwh / max(0.1, pv_now)) if pv_now > 0 else 99
 
 b1, b2, b3 = st.columns(3)
 b1.metric("🔋 Battery Now", f"{battery_now_kwh:.1f} / {battery_size:.1f} kWh ({battery_now_pct}%)")
@@ -372,9 +406,9 @@ b3.metric("⏱️ Time to Full (at current power)", f"{hours_to_full:.1f} hrs" i
 
 if is_evening_forecast:
     st.error(f"🔴 SAVE BATTERY FOR TONIGHT - Sun has set. No more charging today. You have {battery_now_kwh:.1f} kWh in battery. Use only lights / fan / phone. Use grid / generator if you must.")
-elif pred_pv > 3.5:
+elif pv_now > 3.5:
     st.success(f"✅ CHARGE NOW - Best window 11am to 3pm. You have ~{solar_after_load:.1f} kWh left after your load. Battery can be full in ~{hours_to_full:.1f} hrs. Run freezer / washing machine / pump now.")
-elif pred_pv > 1.5:
+elif pv_now > 1.5:
     st.warning(f"⚠️ CHARGE SLOWLY - Moderate sun. You have ~{solar_after_load:.1f} kWh left. Charge battery slowly, run only essential loads. Save battery for evening.")
 else:
     st.error(f"🔴 SAVE BATTERY - Low sun. Only ~{solar_after_load:.1f} kWh left. Don't charge heavy loads. Keep battery for lights / fan / phone at night. Use grid / generator if you must.")
@@ -384,7 +418,7 @@ if solar_after_load >= battery_needed_kwh:
 else:
     st.info(f"💡 Heads up: Today's remaining sun ({solar_after_load:.1f} kWh) is NOT enough to fill your battery ({battery_needed_kwh:.1f} kWh needed). Prioritize essentials.")
 
-# --- NEW - BATTERY HEALTH - LAYMAN VERSION ---
+# --- BATTERY HEALTH ---
 st.subheader("🩺 Battery Health - How Strong Is Your Battery?")
 health_loss = (battery_age_months * 0.25) + (battery_cycles * 0.02)
 health_pct = max(50.0, 100.0 - health_loss)
