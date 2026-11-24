@@ -113,14 +113,14 @@ get_forecast = st.sidebar.button("🚀 Get Live Forecast")
 # --- NEW - BATTERY INPUTS IN SIDEBAR ---
 st.sidebar.markdown("---")
 st.sidebar.header("🔋 Battery Advice")
-battery_size = st.sidebar.number_input("Battery size (kWh)", min_value=1.0, max_value=50.0, value=5.0, step=0.5)
-battery_now_pct = st.sidebar.slider("Battery charge now (%)", 0, 100, 40)
-daily_load = st.sidebar.number_input("What you need today (kWh)", min_value=1.0, max_value=50.0, value=5.0, step=0.5, help="Example: fridge + lights + fan = ~5 kWh")
+battery_size = st.sidebar.number_input("How much power can your battery hold?", min_value=1.0, max_value=50.0, value=5.0, step=0.5, help="When full, how much power is inside it? Example: Small house = 5, Big house = 10. Check the label on your battery.")
+battery_age_months = st.sidebar.number_input("When did you buy your battery? (months ago)", min_value=0, max_value=120, value=12, step=1, help="Example: Bought last year = 12, Bought 2 years ago = 24. Just guess if you don't remember.")
+daily_load = st.sidebar.number_input("How much power do you need today?", min_value=1.0, max_value=50.0, value=5.0, step=0.5, help="Example: Fridge + lights + fan for one day = about 5")
 
 # --- NEW - BATTERY HEALTH - LAYMAN VERSION (no word "cycles" shown) ---
 st.sidebar.markdown("---")
 st.sidebar.header("🩺 Battery Health")
-battery_age_months = st.sidebar.number_input("How old is your battery? (months)", min_value=0, max_value=120, value=12, step=1, help="Example: Bought last year = 12, Bought 2 years ago = 24")
+battery_age_months = st.sidebar.number_input("How long have you been using this battery? (months ago)", min_value=0, max_value=120, value=12, step=1, help="Example: Using it for 1 year = 12, Using it for 2 years = 24")
 charge_how_often = st.sidebar.selectbox(
     "How often do you charge it?",
     ["Every day", "Every 2 days", "Every 3-4 days", "Only when NEPA goes off (about once a week)"],
