@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-# --- LAGOS TIME - FIX FOR STREAMLIT SERVER IN UTC ---
+# --- LAGOS TIME ---
 LAGOS_TZ = ZoneInfo("Africa/Lagos")
 def lagos_now():
     return datetime.now(LAGOS_TZ)
@@ -27,6 +27,58 @@ np.random.seed(RANDOM_STATE)
 os.environ['PYTHONHASHSEED'] = str(RANDOM_STATE)
 
 st.set_page_config(page_title="Abuja Solar Forecast", page_icon="☀️", layout="wide")
+
+# ==========================================================
+# FIX: SIDEBAR NOTICEABLE ON PHONE, CLEAN ON LAPTOP
+# ==========================================================
+st.markdown("""
+<style>
+.phone-banner { display: none; }
+@media (max-width: 768px) {
+    [data-testid="collapsedControl"] {
+        font-size: 28px !important;
+        background-color: #FFA500 !important;
+        border-radius: 12px !important;
+        padding: 8px 12px !important;
+        box-shadow: 0 0 15px #FFA500 !important;
+        animation: pulse 1.5s infinite !important;
+    }
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.15); }
+        100% { transform: scale(1); }
+    }
+    .phone-banner { display: block; }
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="phone-banner">', unsafe_allow_html=True)
+st.warning("👈 TAP **>>** TOP-LEFT TO OPEN CONTROLS - Change Battery, User Type, Forecast Days")
+st.markdown('</div>', unsafe_allow_html=True)
+
+@st.dialog("👈 Open Controls First!")
+def show_controls_popup():
+    st.markdown("""
+    ### To use this app on phone:
+    1. Tap **>>** at the TOP-LEFT corner
+    2. Sidebar will open
+    3. Change:
+       - 🔋 Battery - Pick your battery type, how many, inverter lights
+       - 👤 I am a... (Homeowner / Grid Operator)
+       - 📅 Forecast Days
+    4. Tap **🚀 Get Live Forecast**
+    
+    On laptop, sidebar is already open on the left.
+    """)
+    if st.button("✅ Got it, Show Me Forecast", use_container_width=True):
+        st.rerun()
+
+if "popup_shown" not in st.session_state:
+    st.session_state.popup_shown = True
+    show_controls_popup()
+# ==========================================================
+
 st.title("☀️ Abuja Solar Power Forecast")
 st.markdown("Live solar prediction using NASA POWER API + Machine Learning | Capstone Project")
 
@@ -72,7 +124,7 @@ def fetch_live_nasa_data(days_back=35):
         st.error(f"Failed to fetch live data: {e}")
         return None
 
-# --- LIVE WEATHER API (Open-Meteo, free, no key) - NOW WITH HOURLY ---
+# --- LIVE WEATHER API (Open-Meteo) ---
 @st.cache_data(ttl=600)
 def fetch_live_weather_openmeteo():
     url = "https://api.open-meteo.com/v1/forecast"
@@ -123,14 +175,81 @@ forecast_days = st.sidebar.slider("Forecast Days", 1, 7, 3)
 user_type = st.sidebar.selectbox("👤 I am a...", ["Grid Operator", "Mini-Grid Operator", "Homeowner"])
 get_forecast = st.sidebar.button("🚀 Get Live Forecast")
 
-# --- BATTERY INPUTS IN SIDEBAR ---
+# ==========================================================
+# CHANGED: BATTERY ADVICE - LAYMAN VERSION, AUTO-CALCULATED
+# No more kWh typing. Pick what you know, we calculate.
+# ==========================================================
 st.sidebar.markdown("---")
 st.sidebar.header("🔋 Battery Advice")
-battery_size = st.sidebar.number_input("How much power can your battery hold? (kWh)", min_value=1.0, max_value=50.0, value=5.0, step=0.5, help="When full, how much power is inside it? Example: Small house = 5, Big house = 10. Check the label on your battery.")
-battery_now_pct = st.sidebar.number_input("How full is your battery now? (%)", min_value=0, max_value=100, value=50, step=5, help="If your battery is half full = 50, If full = 100, If empty = 0")
-daily_load = st.sidebar.number_input("How much light will you use today? (kWh)", min_value=1.0, max_value=50.0, value=5.0, step=0.5, help="Example: Fridge + lights + fan for one day = about 5")
+st.sidebar.caption("Don't worry about kWh - just pick what you have, we calculate it for you.")
 
-# --- BATTERY HEALTH - LAYMAN VERSION ---
+battery_type = st.sidebar.selectbox(
+    "What battery do you have? (Check label on battery)",
+    [
+        "200Ah 12V - Big Tubular / Inverter Battery (Common)",
+        "220Ah 12V - Big Tubular",
+        "150Ah 12V - Medium Battery",
+        "100Ah 12V - Small Battery",
+        "I don't know - Use Small House Default"
+    ]
+)
+
+if "200Ah" in battery_type:
+    kwh_per_battery = 2.4
+elif "220Ah" in battery_type:
+    kwh_per_battery = 2.64
+elif "150Ah" in battery_type:
+    kwh_per_battery = 1.8
+elif "100Ah" in battery_type:
+    kwh_per_battery = 1.2
+else:
+    kwh_per_battery = 2.4
+
+num_batteries = st.sidebar.selectbox("How many batteries do you have?", [1, 2, 3, 4], index=1)
+battery_size = kwh_per_battery * num_batteries
+st.sidebar.success(f"✅ Your battery can hold: **{battery_size:.1f} kWh** - Calculated automatically")
+
+battery_bars = st.sidebar.selectbox(
+    "How full is your battery now? (Look at inverter lights)",
+    ["🟩🟩🟩🟩 Full - 4 lights", "🟩🟩🟩⬜ Almost Full - 3 lights", "🟩🟩⬜⬜ Half - 2 lights", "🟩⬜⬜⬜ Low - 1 light", "⬜⬜⬜⬜ Empty - No light / Red light"],
+    index=2
+)
+if "4 lights" in battery_bars:
+    battery_now_pct = 100
+elif "3 lights" in battery_bars:
+    battery_now_pct = 75
+elif "2 lights" in battery_bars:
+    battery_now_pct = 50
+elif "1 light" in battery_bars:
+    battery_now_pct = 25
+else:
+    battery_now_pct = 5
+st.sidebar.caption(f"That's about {battery_now_pct}% full")
+
+st.sidebar.markdown("What will you use today? (Tick all)")
+use_fridge = st.sidebar.checkbox("🧊 Fridge", value=True)
+use_fans = st.sidebar.checkbox("🌀 Fans (2 fans)", value=True)
+use_lights = st.sidebar.checkbox("💡 Lights (5 bulbs)", value=True)
+use_tv = st.sidebar.checkbox("📺 TV")
+use_pump = st.sidebar.checkbox("💧 Water Pump")
+use_washing = st.sidebar.checkbox("👕 Washing Machine")
+
+daily_load = 0.0
+if use_fridge: daily_load += 1.5
+if use_fans: daily_load += 1.0
+if use_lights: daily_load += 0.8
+if use_tv: daily_load += 0.8
+if use_pump: daily_load += 1.0
+if use_washing: daily_load += 1.0
+if daily_load == 0: daily_load = 2.0
+st.sidebar.success(f"✅ You will use about: **{daily_load:.1f} kWh today** - Calculated automatically")
+# ==========================================================
+# END CHANGED - BATTERY ADVICE
+# ==========================================================
+
+# ==========================================================
+# UNCHANGED: BATTERY HEALTH - LEFT EXACTLY AS YOU HAD IT
+# ==========================================================
 st.sidebar.markdown("---")
 st.sidebar.header("🩺 Battery Health")
 battery_age_months = st.sidebar.number_input("How long have you been using this battery? (months ago)", min_value=0, max_value=120, value=12, step=1, help="Example: Using it for 1 year = 12, Using it for 2 years = 24")
@@ -181,7 +300,7 @@ else:
     pred_pv = max(0, pred_pv)
     st.warning("⚠️ best_model.pkl not found. Using physics formula as demo.")
 
-# --- FETCH LIVE OPEN-METEO WITH EVENING-SMART CAPTIONS ---
+# --- FETCH LIVE OPEN-METEO ---
 live = fetch_live_weather_openmeteo()
 now_hour_live = lagos_hour()
 is_evening = now_hour_live >= 17 or now_hour_live < 6
@@ -189,7 +308,6 @@ is_evening = now_hour_live >= 17 or now_hour_live < 6
 if live is not None:
     st.subheader("🌤️ Live Right Now in Abuja - Open-Meteo API")
     c1, c2, c3, c4 = st.columns(4)
-
     live_radiation = live['radiation_live'] if live['radiation_live'] is not None else 0
     with c1:
         st.metric("☀️ Live Radiation", f"{live_radiation:.0f} W/m²")
@@ -203,7 +321,6 @@ if live is not None:
             st.caption("🌤️ Small Sun - Charging slowly")
         else:
             st.caption("🌑 No Sun - Not charging")
-
     live_temp = live['temp_live'] if live['temp_live'] is not None else 0
     with c2:
         st.metric("🌡️ Live Temp (Right Now)", f"{live_temp:.1f} °C")
@@ -215,7 +332,6 @@ if live is not None:
             st.caption("😊 Fine / Cool")
         else:
             st.caption("❄️ Cold")
-
     live_cloud = live['cloud_live'] if live['cloud_live'] is not None else 0
     with c3:
         st.metric("☁️ Cloud Cover", f"{live_cloud:.0f} %")
@@ -227,7 +343,6 @@ if live is not None:
             st.caption("⛅ Small Cloud")
         else:
             st.caption("☁️ Plenty Cloud - Sun is blocked")
-
     live_wind = live['wind_live'] if live['wind_live'] is not None else 0
     with c4:
         st.metric("💨 Wind", f"{live_wind:.1f} km/h")
@@ -237,16 +352,15 @@ if live is not None:
             st.caption("🍃 Small Wind")
         else:
             st.caption("😊 Calm - No wind")
-
     if is_evening:
         st.info("🌙 Evening / Night time - Sun is setting / already down. No more charging today. Use your battery / grid for tonight. Tomorrow sun will come again.")
     elif live['radiation_live'] is not None and live['radiation_live'] < 200 and pred_pv > 2.5:
         st.warning("⚠️ Live sky is cloudy right now, but daily forecast is high. Expect lower power for the next 1-2 hours, then it should recover.")
     st.caption(f"Live update: {live['time']} | Source: Open-Meteo (free, no key) | Location: Abuja 9.08, 7.49")
 else:
-    st.info("ℹ️ Live Open-Meteo data unavailable right now. Showing NASA forecast only.")
+    st.info("ℹ️ Live Open-Meteo data unavailable right now. Showing NASA forecast only. System still predicts from NASA + ML model (fallback).")
 
-# --- 24H CURVE - FIXED: NO MORE x 1.8 ---
+# --- 24H CURVE ---
 hours = np.arange(24)
 solar_curve = np.maximum(0, np.sin((hours - 6) / 12 * np.pi)) ** 1.5
 hourly_forecast = np.round(solar_curve * pred_pv, 2)
@@ -270,8 +384,7 @@ if live is not None and live.get("hourly_radiation"):
 
 avg_power = hourly_forecast.mean()
 
-# --- PV NOW - FIXED: USE LIVE RADIATION ---
-# Example: (89/1000) x 5.16 x 0.973 = 0.45 kW, NOT 2.40 kW
+# --- PV NOW ---
 pv_now = float(hourly_forecast[lagos_hour()]) if len(hourly_forecast) == 24 else float(pred_pv)
 if live is not None and live.get("radiation_live") is not None:
     live_rad = live["radiation_live"] or 0
@@ -305,7 +418,6 @@ with col1:
             st.caption("⛅ Fair Day - Some sun")
         else:
             st.caption("🌧️ Cloudy Day - Less sun")
-
 with col2:
     st.metric("🌡️ Temp (Today Avg)", f"{last['temperature']:.1f} °C")
     if last['temperature'] >= 35:
@@ -316,7 +428,6 @@ with col2:
         st.caption("😊 Fine / Cool")
     else:
         st.caption("❄️ Cold")
-
 with col3:
     st.metric("💧 Humidity (Today Avg)", f"{last['humidity']:.1f} %")
     if last['humidity'] >= 70:
@@ -325,7 +436,6 @@ with col3:
         st.caption("😊 Normal")
     else:
         st.caption("🏜️ Dry Air")
-
 with col4:
     st.metric("⚡ PV Power Now", f"{pv_output:.2f} kW")
     if is_evening_forecast:
@@ -398,15 +508,13 @@ else:
     else:
         st.error("🔴 Cloudy day in Abuja. Don't rely on solar alone, keep PHCN / generator ready.")
 
-# --- BATTERY ADVICE - FINAL FIX: TIME TO FULL IN EVENING ---
+# --- BATTERY ADVICE ---
 st.subheader("🔋 Battery Advice - What To Do Now")
 now_hour = lagos_hour()
 remaining_energy = float(hourly_forecast[now_hour:].sum())
 battery_now_kwh = battery_size * (battery_now_pct / 100.0)
 battery_needed_kwh = battery_size - battery_now_kwh
 solar_after_load = max(0, remaining_energy - daily_load)
-
-# FINAL FIX: In evening, don't show 5.6 hrs - sun is gone, so Not today
 if is_evening_forecast:
     hours_to_full = 99
 else:
@@ -445,7 +553,6 @@ h1.metric("🩺 Health", f"{health_pct:.0f}%")
 h2.metric("🔋 Real Capacity", f"{real_capacity:.2f} kWh")
 h2.caption(f"Was {battery_size:.1f} kWh when new")
 h3.metric("📉 Lost", f"{lost_capacity:.2f} kWh")
-
 st.progress(int(health_pct))
 
 if health_pct >= 85:
