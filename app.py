@@ -126,7 +126,6 @@ charge_how_often = st.sidebar.selectbox(
     ["Every day", "Every 2 days", "Every 3-4 days", "Only when NEPA goes off (about once a week)"],
     help="Just pick what is closest to your normal life. We will estimate the rest."
 )
-# Convert layman answer to cycles behind the scenes - user never sees "cycles"
 days_old = battery_age_months * 30
 if charge_how_often == "Every day":
     battery_cycles = days_old / 1
@@ -169,17 +168,22 @@ else:
     pred_pv = max(0, pred_pv)
     st.warning("⚠️ best_model.pkl not found. Using physics formula as demo.")
 
-# --- NEW - FETCH LIVE OPEN-METEO WITH LAYMAN CAPTIONS ---
+# --- NEW - FETCH LIVE OPEN-METEO WITH EVENING-SMART CAPTIONS ---
 live = fetch_live_weather_openmeteo()
+# Evening check: sun sets around 6pm in Abuja, so after 5pm no more charging
+now_hour_live = datetime.now().hour
+is_evening = now_hour_live >= 17 or now_hour_live < 6
+
 if live is not None:
     st.subheader("🌤️ Live Right Now in Abuja - Open-Meteo API")
     c1, c2, c3, c4 = st.columns(4)
 
-    # Live Radiation + caption
     live_radiation = live['radiation_live'] if live['radiation_live'] is not None else 0
     with c1:
         st.metric("☀️ Live Radiation", f"{live_radiation:.0f} W/m²")
-        if live_radiation >= 600:
+        if is_evening:
+            st.caption("🌙 Sun is setting - No more charging today")
+        elif live_radiation >= 600:
             st.caption("🔥 Very Hot Sun - Charging very fast")
         elif live_radiation >= 300:
             st.caption("☀️ Hot Sun - Charging well")
@@ -188,7 +192,6 @@ if live is not None:
         else:
             st.caption("🌑 No Sun - Not charging")
 
-    # Live Temperature + caption
     live_temp = live['temp_live'] if live['temp_live'] is not None else 0
     with c2:
         st.metric("🌡️ Live Temperature", f"{live_temp:.1f} °C")
@@ -201,18 +204,18 @@ if live is not None:
         else:
             st.caption("❄️ Cold")
 
-    # Cloud Cover + caption
     live_cloud = live['cloud_live'] if live['cloud_live'] is not None else 0
     with c3:
         st.metric("☁️ Cloud Cover", f"{live_cloud:.0f} %")
-        if live_cloud <= 10:
+        if is_evening:
+            st.caption("🌙 Night time - Cloud does not matter now")
+        elif live_cloud <= 10:
             st.caption("☀️ Clear Sky - No cloud")
         elif live_cloud <= 50:
             st.caption("⛅ Small Cloud")
         else:
             st.caption("☁️ Plenty Cloud - Sun is blocked")
 
-    # Wind + caption
     live_wind = live['wind_live'] if live['wind_live'] is not None else 0
     with c4:
         st.metric("💨 Wind", f"{live_wind:.1f} km/h")
@@ -223,7 +226,9 @@ if live is not None:
         else:
             st.caption("😊 Calm - No wind")
 
-    if live['radiation_live'] is not None and live['radiation_live'] < 200 and pred_pv > 2.5:
+    if is_evening:
+        st.info("🌙 Evening / Night time - Sun is setting / already down. No more charging today. Use your battery / grid for tonight. Tomorrow sun will come again.")
+    elif live['radiation_live'] is not None and live['radiation_live'] < 200 and pred_pv > 2.5:
         st.warning("⚠️ Live sky is cloudy right now, but daily forecast is high. Expect lower power for the next 1-2 hours, then it should recover.")
     st.caption(f"Live update: {live['time']} | Source: Open-Meteo (free, no key) | Location: Abuja 9.08, 7.49")
 else:
@@ -235,21 +240,31 @@ solar_curve = np.maximum(0, np.sin((hours - 6) / 12 * np.pi)) ** 1.5
 hourly_forecast = np.round(solar_curve * pred_pv * 1.8, 2)
 avg_power = hourly_forecast.mean()
 
-# --- METRICS WITH LAYMAN CAPTIONS - SUNNY DAY + EXCELLENCE BACK ---
+# --- METRICS WITH EVENING-SMART CAPTIONS - SUNNY DAY + EXCELLENCE ---
 st.subheader(f"📊 Live Forecast for Abuja - {datetime.now().strftime('%d %b %Y')}")
 col1, col2, col3, col4 = st.columns(4)
 last = df.iloc[-1]
 irradiance_today = last['irradiance']
 pv_output = pred_pv
+now_hour_forecast = datetime.now().hour
+is_evening_forecast = now_hour_forecast >= 17 or now_hour_forecast < 6
 
 with col1:
-    st.metric("☀️ Irradiance Today", f"{irradiance_today:.2f} kWh/m²/day")
-    if irradiance_today >= 5.5:
-        st.caption("☀️ Sunny Day - Plenty sun for charging")
-    elif irradiance_today >= 3.5:
-        st.caption("⛅ Fair Day - Some sun, some cloud")
+    st.metric("☀️ Sunlight Today (Whole Day)", f"{irradiance_today:.2f} kWh")
+    if is_evening_forecast:
+        if irradiance_today >= 5.5:
+            st.caption("☀️ Today Was Sunny Day - But sun has set, no more charging today")
+        elif irradiance_today >= 3.5:
+            st.caption("⛅ Today Was Fair Day - But sun has set")
+        else:
+            st.caption("🌧️ Today Was Cloudy Day - Sun has set")
     else:
-        st.caption("🌧️ Cloudy Day - Less sun today")
+        if irradiance_today >= 5.5:
+            st.caption("☀️ Sunny Day - Plenty sun for charging")
+        elif irradiance_today >= 3.5:
+            st.caption("⛅ Fair Day - Some sun, some cloud")
+        else:
+            st.caption("🌧️ Cloudy Day - Less sun today")
 
 with col2:
     st.metric("🌡️ Temperature", f"{last['temperature']:.1f} °C")
@@ -272,8 +287,10 @@ with col3:
         st.caption("🏜️ Dry Air")
 
 with col4:
-    st.metric("⚡ Predicted PV Power", f"{pv_output:.2f} kW")
-    if pv_output >= 5.0:
+    st.metric("⚡ Predicted PV Power (Daytime)", f"{pv_output:.2f} kW")
+    if is_evening_forecast:
+        st.caption("🌙 Sun has set - No power now, this was for daytime")
+    elif pv_output >= 5.0:
         st.caption("⭐ Excellence - Working very well")
     elif pv_output >= 3.0:
         st.caption("👍 Good - Working okay")
@@ -315,7 +332,9 @@ st.dataframe(hourly_df, use_container_width=True)
 
 # --- RECOMMENDATION ---
 st.subheader("💡 Recommendation")
-if user_type == "Grid Operator":
+if is_evening_forecast:
+    st.info("🌙 It is evening now in Abuja. Today's sun is finished. Save your battery for tonight, use grid / generator if needed. Tomorrow's sun will charge again.")
+elif user_type == "Grid Operator":
     if avg_power > 2.5:
         st.success("✅ High solar in Abuja. You can reduce reliance on grid / diesel today.")
     elif avg_power > 1.2:
@@ -351,7 +370,9 @@ b1.metric("🔋 Battery Now", f"{battery_now_kwh:.1f} / {battery_size:.1f} kWh (
 b2.metric("☀️ Solar Left Today", f"{remaining_energy:.1f} kWh")
 b3.metric("⏱️ Time to Full (at current power)", f"{hours_to_full:.1f} hrs" if hours_to_full < 20 else "Not today")
 
-if pred_pv > 3.5:
+if is_evening_forecast:
+    st.error(f"🔴 SAVE BATTERY FOR TONIGHT - Sun has set. No more charging today. You have {battery_now_kwh:.1f} kWh in battery. Use only lights / fan / phone. Use grid / generator if you must.")
+elif pred_pv > 3.5:
     st.success(f"✅ CHARGE NOW - Best window 11am to 3pm. You have ~{solar_after_load:.1f} kWh left after your load. Battery can be full in ~{hours_to_full:.1f} hrs. Run freezer / washing machine / pump now.")
 elif pred_pv > 1.5:
     st.warning(f"⚠️ CHARGE SLOWLY - Moderate sun. You have ~{solar_after_load:.1f} kWh left. Charge battery slowly, run only essential loads. Save battery for evening.")
