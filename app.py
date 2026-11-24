@@ -33,7 +33,7 @@ st.set_page_config(page_title="Abuja Solar Forecast", page_icon="☀️", layout
 # ==========================================================
 st.markdown("""
 <style>
-.phone-banner { display: none; }
+.phone-banner { display: none !important; }
 @media (max-width: 768px) {
     [data-testid="collapsedControl"] {
         font-size: 28px !important;
@@ -48,14 +48,17 @@ st.markdown("""
         50% { transform: scale(1.15); }
         100% { transform: scale(1); }
     }
-    .phone-banner { display: block; }
+    .phone-banner { display: block !important; }
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="phone-banner">', unsafe_allow_html=True)
-st.warning("👈 TAP **>>** TOP-LEFT TO OPEN CONTROLS - Change Battery, User Type, Forecast Days")
-st.markdown('</div>', unsafe_allow_html=True)
+# FIXED BANNER - Pure HTML, so CSS can hide it on laptop
+st.markdown("""
+<div class="phone-banner" style="background-color:#FFF3CD; padding:12px; border-radius:8px; border:1px solid #FFA500; color:#664D03; font-weight:600;">
+👈 TAP >> TOP-LEFT TO OPEN CONTROLS - Change Battery, User Type, Forecast Days
+</div>
+""", unsafe_allow_html=True)
 
 @st.dialog("👈 Open Controls First!")
 def show_controls_popup():
@@ -176,8 +179,7 @@ user_type = st.sidebar.selectbox("👤 I am a...", ["Grid Operator", "Mini-Grid 
 get_forecast = st.sidebar.button("🚀 Get Live Forecast")
 
 # ==========================================================
-# CHANGED: BATTERY ADVICE - LAYMAN VERSION, AUTO-CALCULATED
-# No more kWh typing. Pick what you know, we calculate.
+# BATTERY ADVICE - LAYMAN VERSION, AUTO-CALCULATED
 # ==========================================================
 st.sidebar.markdown("---")
 st.sidebar.header("🔋 Battery Advice")
@@ -243,12 +245,9 @@ if use_pump: daily_load += 1.0
 if use_washing: daily_load += 1.0
 if daily_load == 0: daily_load = 2.0
 st.sidebar.success(f"✅ You will use about: **{daily_load:.1f} kWh today** - Calculated automatically")
-# ==========================================================
-# END CHANGED - BATTERY ADVICE
-# ==========================================================
 
 # ==========================================================
-# UNCHANGED: BATTERY HEALTH - LEFT EXACTLY AS YOU HAD IT
+# BATTERY HEALTH - UNCHANGED
 # ==========================================================
 st.sidebar.markdown("---")
 st.sidebar.header("🩺 Battery Health")
