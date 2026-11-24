@@ -30,25 +30,29 @@ st.set_page_config(page_title="Abuja Solar Forecast", page_icon="☀️", layout
 
 # ==========================================================
 # FIX: SIDEBAR NOTICEABLE ON PHONE, CLEAN ON LAPTOP
+# Banner pulses on phone, hidden on laptop
 # ==========================================================
 st.markdown("""
 <style>
 .phone-banner { display: none !important; }
 @media (max-width: 768px) {
-    [data-testid="collapsedControl"] {
-        font-size: 28px !important;
+    .phone-banner {
+        display: block !important;
+        animation: bannerPulse 1.5s infinite !important;
+    }
+    @keyframes bannerPulse {
+        0% { transform: scale(1); box-shadow: 0 0 0px #FFA500; }
+        50% { transform: scale(1.02); box-shadow: 0 0 20px #FFA500; }
+        100% { transform: scale(1); box-shadow: 0 0 0px #FFA500; }
+    }
+    /* Try ALL possible names for the >> button */
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stSidebarCollapseButton"] {
         background-color: #FFA500 !important;
         border-radius: 12px !important;
-        padding: 8px 12px !important;
         box-shadow: 0 0 15px #FFA500 !important;
-        animation: pulse 1.5s infinite !important;
     }
-    @keyframes pulse {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.15); }
-        100% { transform: scale(1); }
-    }
-    .phone-banner { display: block !important; }
 }
 </style>
 """, unsafe_allow_html=True)
