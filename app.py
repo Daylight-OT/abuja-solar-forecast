@@ -114,7 +114,7 @@ get_forecast = st.sidebar.button("🚀 Get Live Forecast")
 st.sidebar.markdown("---")
 st.sidebar.header("🔋 Battery Advice")
 battery_size = st.sidebar.number_input("How much power can your battery hold? (kWh)", min_value=1.0, max_value=50.0, value=5.0, step=0.5, help="When full, how much power is inside it? Example: Small house = 5, Big house = 10. Check the label on your battery.")
-battery_age_months = st.sidebar.number_input("When did you buy your battery? (months ago)", min_value=0, max_value=120, value=12, step=1, help="Example: Bought last year = 12, Bought 2 years ago = 24. Just guess if you don't remember.")
+battery_now_pct = st.sidebar.number_input("How full is your battery now? (%)", min_value=0, max_value=100, value=50, step=5, help="If your battery is half full = 50, If full = 100, If empty = 0")
 daily_load = st.sidebar.number_input("How much light will you use today? (kWh)", min_value=1.0, max_value=50.0, value=5.0, step=0.5, help="Example: Fridge + lights + fan for one day = about 5")
 
 # --- NEW - BATTERY HEALTH - LAYMAN VERSION (no word "cycles" shown) ---
@@ -127,7 +127,6 @@ charge_how_often = st.sidebar.selectbox(
     help="Just pick what is closest to your normal life. We will estimate the rest."
 )
 # Convert layman answer to cycles behind the scenes - user never sees "cycles"
-# 1 month = ~30 days
 days_old = battery_age_months * 30
 if charge_how_often == "Every day":
     battery_cycles = days_old / 1
@@ -135,7 +134,7 @@ elif charge_how_often == "Every 2 days":
     battery_cycles = days_old / 2
 elif charge_how_often == "Every 3-4 days":
     battery_cycles = days_old / 3.5
-else:  # Only when NEPA goes off
+else:
     battery_cycles = days_old / 7
 
 if not get_forecast:
@@ -170,15 +169,60 @@ else:
     pred_pv = max(0, pred_pv)
     st.warning("⚠️ best_model.pkl not found. Using physics formula as demo.")
 
-# --- NEW - FETCH LIVE OPEN-METEO ---
+# --- NEW - FETCH LIVE OPEN-METEO WITH LAYMAN CAPTIONS ---
 live = fetch_live_weather_openmeteo()
 if live is not None:
     st.subheader("🌤️ Live Right Now in Abuja - Open-Meteo API")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("☀️ Live Radiation", f"{live['radiation_live']:.0f} W/m²" if live['radiation_live'] is not None else "—")
-    c2.metric("🌡️ Live Temperature", f"{live['temp_live']:.1f} °C" if live['temp_live'] is not None else "—")
-    c3.metric("☁️ Cloud Cover", f"{live['cloud_live']:.0f} %" if live['cloud_live'] is not None else "—")
-    c4.metric("💨 Wind", f"{live['wind_live']:.1f} km/h" if live['wind_live'] is not None else "—")
+
+    # Live Radiation + caption
+    live_radiation = live['radiation_live'] if live['radiation_live'] is not None else 0
+    with c1:
+        st.metric("☀️ Live Radiation", f"{live_radiation:.0f} W/m²")
+        if live_radiation >= 600:
+            st.caption("🔥 Very Hot Sun - Charging very fast")
+        elif live_radiation >= 300:
+            st.caption("☀️ Hot Sun - Charging well")
+        elif live_radiation >= 100:
+            st.caption("🌤️ Small Sun - Charging slowly")
+        else:
+            st.caption("🌑 No Sun - Not charging")
+
+    # Live Temperature + caption
+    live_temp = live['temp_live'] if live['temp_live'] is not None else 0
+    with c2:
+        st.metric("🌡️ Live Temperature", f"{live_temp:.1f} °C")
+        if live_temp >= 35:
+            st.caption("🥵 Very Hot")
+        elif live_temp >= 28:
+            st.caption("☀️ Hot")
+        elif live_temp >= 22:
+            st.caption("😊 Fine / Cool")
+        else:
+            st.caption("❄️ Cold")
+
+    # Cloud Cover + caption
+    live_cloud = live['cloud_live'] if live['cloud_live'] is not None else 0
+    with c3:
+        st.metric("☁️ Cloud Cover", f"{live_cloud:.0f} %")
+        if live_cloud <= 10:
+            st.caption("☀️ Clear Sky - No cloud")
+        elif live_cloud <= 50:
+            st.caption("⛅ Small Cloud")
+        else:
+            st.caption("☁️ Plenty Cloud - Sun is blocked")
+
+    # Wind + caption
+    live_wind = live['wind_live'] if live['wind_live'] is not None else 0
+    with c4:
+        st.metric("💨 Wind", f"{live_wind:.1f} km/h")
+        if live_wind >= 30:
+            st.caption("💨 Strong Wind")
+        elif live_wind >= 10:
+            st.caption("🍃 Small Wind")
+        else:
+            st.caption("😊 Calm - No wind")
+
     if live['radiation_live'] is not None and live['radiation_live'] < 200 and pred_pv > 2.5:
         st.warning("⚠️ Live sky is cloudy right now, but daily forecast is high. Expect lower power for the next 1-2 hours, then it should recover.")
     st.caption(f"Live update: {live['time']} | Source: Open-Meteo (free, no key) | Location: Abuja 9.08, 7.49")
@@ -191,14 +235,50 @@ solar_curve = np.maximum(0, np.sin((hours - 6) / 12 * np.pi)) ** 1.5
 hourly_forecast = np.round(solar_curve * pred_pv * 1.8, 2)
 avg_power = hourly_forecast.mean()
 
-# --- METRICS ---
+# --- METRICS WITH LAYMAN CAPTIONS - SUNNY DAY + EXCELLENCE BACK ---
 st.subheader(f"📊 Live Forecast for Abuja - {datetime.now().strftime('%d %b %Y')}")
 col1, col2, col3, col4 = st.columns(4)
 last = df.iloc[-1]
-col1.metric("☀️ Irradiance Today", f"{last['irradiance']:.2f} kWh/m²/day")
-col2.metric("🌡️ Temperature", f"{last['temperature']:.1f} °C")
-col3.metric("💧 Humidity", f"{last['humidity']:.1f} %")
-col4.metric("⚡ Predicted PV Power", f"{pred_pv:.2f} kW")
+irradiance_today = last['irradiance']
+pv_output = pred_pv
+
+with col1:
+    st.metric("☀️ Irradiance Today", f"{irradiance_today:.2f} kWh/m²/day")
+    if irradiance_today >= 5.5:
+        st.caption("☀️ Sunny Day - Plenty sun for charging")
+    elif irradiance_today >= 3.5:
+        st.caption("⛅ Fair Day - Some sun, some cloud")
+    else:
+        st.caption("🌧️ Cloudy Day - Less sun today")
+
+with col2:
+    st.metric("🌡️ Temperature", f"{last['temperature']:.1f} °C")
+    if last['temperature'] >= 35:
+        st.caption("🥵 Very Hot")
+    elif last['temperature'] >= 28:
+        st.caption("☀️ Hot")
+    elif last['temperature'] >= 22:
+        st.caption("😊 Fine / Cool")
+    else:
+        st.caption("❄️ Cold")
+
+with col3:
+    st.metric("💧 Humidity", f"{last['humidity']:.1f} %")
+    if last['humidity'] >= 70:
+        st.caption("💧 Very Damp - Air is heavy")
+    elif last['humidity'] >= 40:
+        st.caption("😊 Normal")
+    else:
+        st.caption("🏜️ Dry Air")
+
+with col4:
+    st.metric("⚡ Predicted PV Power", f"{pv_output:.2f} kW")
+    if pv_output >= 5.0:
+        st.caption("⭐ Excellence - Working very well")
+    elif pv_output >= 3.0:
+        st.caption("👍 Good - Working okay")
+    else:
+        st.caption("⚠️ Low - Not producing much")
 
 # --- GRAPH 1 ---
 st.subheader("📈 24-Hour Solar Forecast - Abuja")
@@ -285,8 +365,6 @@ else:
 
 # --- NEW - BATTERY HEALTH - LAYMAN VERSION ---
 st.subheader("🩺 Battery Health - How Strong Is Your Battery?")
-# Same formula, but cycles now come from layman dropdown, not typed number
-# Health = 100% - (Age x 0.25%) - (Cycles x 0.02%)
 health_loss = (battery_age_months * 0.25) + (battery_cycles * 0.02)
 health_pct = max(50.0, 100.0 - health_loss)
 real_capacity = battery_size * (health_pct / 100.0)
